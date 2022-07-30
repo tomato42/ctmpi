@@ -1,0 +1,162 @@
+#include <stdint.h>
+#include <stddef.h>
+#include <sys/types.h>
+
+/* For multiplication we're using schoolbook multiplication,
+ * so if we have two numbers, each with 6 "digits" (words)
+ * the multiplication is calculated as follows:
+ *                        A B C D E F
+ *                     x  I J K L M N
+ *                     --------------
+ *                                N*F
+ *                              N*E
+ *                            N*D
+ *                          N*C
+ *                        N*B
+ *                      N*A
+ *                              M*F
+ *                            M*E
+ *                          M*D
+ *                        M*C
+ *                      M*B
+ *                    M*A
+ *                            L*F
+ *                          L*E
+ *                        L*D
+ *                      L*C
+ *                    L*B
+ *                  L*A
+ *                          K*F
+ *                        K*E
+ *                      K*D
+ *                    K*C
+ *                  K*B
+ *                K*A
+ *                        J*F
+ *                      J*E
+ *                    J*D
+ *                  J*C
+ *                J*B
+ *              J*A
+ *                      I*F
+ *                    I*E
+ *                  I*D
+ *                I*C
+ *              I*B
+ *         +  I*A
+ *         ==========================
+ *                        N*B N*D N*F
+ *                    + N*A N*C N*E
+ *                    + M*B M*D M*F
+ *                  + M*A M*C M*E
+ *                  + L*B L*D L*F
+ *                + L*A L*C L*E
+ *                + K*B K*D K*F
+ *              + K*A K*C K*E
+ *              + J*B J*D J*F
+ *            + J*A J*C J*E
+ *            + I*B I*D I*F
+ *          + I*A I*C I*E
+ *
+ *                1+1 1+3 1+5
+ *              1+0 1+2 1+4
+ *              0+1 0+3 0+5
+ *            0+0 0+2 0+4
+ *
+ *            0 1 2 3 4 5 6
+ * which requires n^2 multiplications and 2n full length additions
+ * as we can keep every other result of limb multiplication in two separate
+ * limbs
+ */
+
+typedef uint64_t limb_t;
+#define LIMB_BIT_SIZE 64
+#define LIMB_BYTE_SIZE 8
+
+void _mul_limb(limb_t *hi, limb_t *lo, limb_t a, limb_t b) {
+    unsigned __int128 t;
+    /* this is idiomatic code to tell compiler to use the native mul
+     * those three lines will actually compile to single instruction */
+    t = (unsigned __int128)a * b;
+    *hi = t >> LIMB_BIT_SIZE;
+    *lo = t & -1UL;
+}
+
+/* add two limbs with carry in, return carry out */
+limb_t _add_limb(limb_t *ret, limb_t a, limb_t b, limb_t carry) {
+    limb_t carry1, carry2, t;
+    /* `c = a + b; if (c < a)` is idiomatic code that makes compilers
+     * use add with carry on assembly level */
+    *ret = a + carry;
+    if (*ret < a) {
+        carry1 = 1;
+    } else {
+        carry1 = 0;
+    }
+    t = *ret;
+    *ret = t + b;
+    if (*ret < t) {
+        carry2 = 1;
+    } else {
+        carry2 = 0;
+    }
+    return carry1 + carry2;
+}
+
+/* add two numbers of the same size, return overflow
+ *
+ * add a to b, place result in ret; all arrays need to be n limbs long
+ * return overflow from addition (0 or 1)
+ */
+limb_t add(limb_t *ret, limb_t *a, limb_t *b, size_t n) {
+    limb_t c = 0;
+    for(ssize_t i=n-1; i>-1; i--) {
+        c = _add_limb(&ret[i], a[i], b[i], c);
+    }
+    return c;
+}
+
+/* return number of limbs necessary for temporary values
+ * when multiplying numbers n limbs large
+ */
+size_t mul_limb_numb(size_t n) {
+    return  2*n*2;
+}
+
+/* multiply two numbers of the same size
+ *
+ * multiply a by b, place result in ret; a and b need to be n limbs long
+ * ret needs to be 2*n limbs long, tmp needs to be mul_limb_numb(n) limbs
+ * long
+ */
+void mul(limb_t *ret, limb_t *a, limb_t *b, size_t n, limb_t *tmp) {
+
+    limb_t *r_odd, *r_even;
+    r_odd = tmp;
+    r_even = &tmp[2*n];
+
+    for (size_t i=0; i<2*n; i++) {
+        ret[i] = 0;
+    }
+
+    for (size_t i=0; i<n; i++) {
+        for (size_t k=0; k<i+n+1; k++) {
+            r_even[k] = 0;
+            r_odd[k] = 0;
+        }
+        for (size_t j=0; j<n; j++) {
+            /* place results from even and odd limbs in separate arrays so that
+             * we don't have to calculate overflow every time we get individual
+             * limb multiplication result */
+            if (j % 2 == 0) {
+                _mul_limb(&r_even[i+j], &r_even[i+j+1], a[i], b[j]);
+            } else {
+                _mul_limb(&r_odd[i+j], &r_odd[i+j+1], a[i], b[j]);
+            }
+        }
+        /* skip the least significant limbs when adding multiples of
+         * more significant limbs (they're zero anyway) */
+        add(ret, ret, r_even, n+i+1);
+        add(ret, ret, r_odd, n+i+1);
+    }
+}
