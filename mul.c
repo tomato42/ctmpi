@@ -160,3 +160,64 @@ void mul(limb_t *ret, limb_t *a, limb_t *b, size_t n, limb_t *tmp) {
         add(ret, ret, r_odd, n+i+1);
     }
 }
+
+/* modifies the value in place by performing a right shift by one bit */
+void rshift1(limb_t *val, size_t n) {
+    limb_t shift_in=0, shift_out=0;
+    for (size_t i=0; i<n; i++) {
+        shift_out = val[i] & 1;
+        val[i] = shift_in << (LIMB_BIT_SIZE-1) | (val[i] >> 1);
+        shift_in = shift_out;
+    }
+}
+
+/* extend the LSB of flag to all bits of limb */
+limb_t mk_mask(limb_t flag) {
+    flag |= flag << 1;
+    flag |= flag << 2;
+    flag |= flag << 4;
+    flag |= flag << 8;
+    flag |= flag << 16;
+#if (LIMB_BYTE_SIZE == 8)
+    flag |= flag << 32;
+#endif
+    return flag;
+}
+
+/* copy from either a or b to ret based on flag
+ * when flag == 0, then copies from b
+ * when flag == 1, then copies from a
+ */
+void cselect(limb_t flag, limb_t *ret, limb_t *a, limb_t *b, size_t n) {
+    limb_t mask;
+    mask = mk_mask(flag);
+    for (size_t i=0; i<n; i++) {
+        ret[i] = (mask & a[i]) | (~mask & b[i]);
+    }
+}
+
+limb_t _sub_limb(limb_t *ret, limb_t a, limb_t b, limb_t borrow) {
+    limb_t borrow1, borrow2, t;
+    *ret = a - borrow;
+    if (*ret > a) {
+        borrow1 = 1;
+    } else {
+        borrow1 = 0;
+    }
+    t = *ret;
+    *ret = t - b;
+    if (*ret > t) {
+        borrow2 = 1;
+    } else {
+        borrow2 = 0;
+    }
+    return borrow1 + borrow2;
+}
+
+limb_t sub(limb_t *ret, limb_t *a, limb_t *b, size_t n) {
+    limb_t borrow = 0;
+    for (ssize_t i=n-1; i>-1; i--) {
+        borrow = _sub_limb(&ret[i], a[i], b[i], borrow);
+    }
+    return borrow;
+}

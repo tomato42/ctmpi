@@ -264,6 +264,192 @@ int test_4_limb_mul() {
     return 0;
 }
 
+int test_1_limb_rshift_to_zero() {
+    limb_t a;
+    a = 0x1;
+
+    rshift1(&a, 1);
+
+    assert(a == 0);
+    return 0;
+}
+
+int test_1_limb_rshift_insert_zero() {
+    limb_t a;
+    a = -1;
+
+    rshift1(&a, 1);
+    assert(a == (limb_t)-1 ^ ((limb_t)1 << (LIMB_BIT_SIZE - 1)));
+
+    return 0;
+}
+
+int test_2_limb_rshift_over_limbs() {
+    limb_t a[2];
+    a[0] = 1;
+    a[1] = 0;
+
+    rshift1(a, 2);
+
+    assert(a[0] == 0);
+    assert(a[1] == (limb_t)1 << (LIMB_BIT_SIZE - 1));
+
+    return 0;
+}
+
+int test_mk_mask_zero() {
+    limb_t a;
+    limb_t ret;
+    a = 0;
+
+    ret = mk_mask(a);
+
+    assert(ret == 0);
+
+    return 0;
+}
+
+int test_mk_mask_one() {
+    limb_t a;
+    limb_t ret;
+    a = 1;
+
+    ret = mk_mask(a);
+
+    assert(ret == -1);
+
+    return 0;
+}
+
+int test_cselect_2_limb_sel_b() {
+    limb_t a[2], b[2];
+    limb_t ret[2];
+    limb_t flag;
+
+    a[0] = 1;
+    a[1] = 2;
+    b[0] = 10;
+    b[1] = 11;
+
+    flag = 0;
+
+    cselect(flag, ret, a, b, 2);
+
+    assert(ret[0] = 10);
+    assert(ret[1] = 11);
+
+    return 0;
+}
+
+int test_cselect_2_limb_sel_a() {
+    limb_t a[2], b[2];
+    limb_t ret[2];
+    limb_t flag;
+
+    a[0] = 1;
+    a[1] = 2;
+    b[0] = 10;
+    b[1] = 11;
+
+    flag = 1;
+
+    cselect(flag, ret, a, b, 2);
+
+    assert(ret[0] = 1);
+    assert(ret[1] = 2);
+
+    return 0;
+}
+
+int test_1_limb_sub() {
+    limb_t a, b;
+    limb_t res, ret;
+
+    a = 10;
+    b = 8;
+
+    ret = sub(&res, &a, &b, 1);
+
+    assert(ret == 0);
+    assert(res == 2);
+
+    return 0;
+}
+
+int test_1_limb_sub_with_borrow() {
+    limb_t a, b;
+    limb_t res, ret;
+
+    a = 8;
+    b = 10;
+
+    ret = sub(&res, &a, &b, 1);
+
+    assert(ret == 1);
+    assert(res == -2);
+
+    return 0;
+}
+
+int test_2_limb_sub() {
+    limb_t a[2], b[2];
+    limb_t res[2], ret;
+
+    a[0] = 20;
+    a[1] = 11;
+    b[0] = 8;
+    b[1] = 1;
+
+    ret = sub(res, a, b, 2);
+
+    assert(ret == 0);
+    assert(res[0] == 12);
+    assert(res[1] == 10);
+
+    return 0;
+}
+
+int test_2_limb_sub_with_borrow() {
+    limb_t a[2], b[2];
+    limb_t res[2], ret;
+
+    a[0] = 20;
+    a[1] = 10;
+    b[0] = 8;
+    b[1] = 11;
+
+    ret = sub(res, a, b, 2);
+
+    assert(ret == 0);
+    assert(res[0] == 11);
+    assert(res[1] == -1);
+
+    return 0;
+}
+
+int test_4_limb_sub_with_borrow() {
+    limb_t a[4], b[4];
+    limb_t res[4], ret;
+
+    a[0] = 0;
+    a[1] = 0;
+    a[2] = 0;
+    a[3] = 0;
+    b[0] = 0;
+    b[1] = 0;
+    b[2] = 0;
+    b[3] = 1;
+
+    ret = sub(res, a, b, 4);
+
+    assert(ret == 1);
+    assert(res[0] == -1);
+    assert(res[1] == -1);
+    assert(res[2] == -1);
+    assert(res[3] == -1);
+
+    return 0;
+}
 
 int main(int argc, char** argv) {
     test_1_limb_add();
@@ -281,4 +467,22 @@ int main(int argc, char** argv) {
     test_3_limb_mul_rand();
 
     test_4_limb_mul();
+
+    test_1_limb_rshift_to_zero();
+    test_1_limb_rshift_insert_zero();
+    test_2_limb_rshift_over_limbs();
+
+    test_mk_mask_zero();
+    test_mk_mask_one();
+
+    test_cselect_2_limb_sel_b();
+    test_cselect_2_limb_sel_a();
+
+    test_1_limb_sub();
+    test_1_limb_sub_with_borrow();
+
+    test_2_limb_sub();
+    test_2_limb_sub_with_borrow();
+
+    test_4_limb_sub_with_borrow();
 }
