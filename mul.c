@@ -189,7 +189,7 @@ limb_t mk_mask(limb_t flag) {
  * when flag == 1, then copies from a
  */
 void cselect(limb_t flag, limb_t *ret, limb_t *a, limb_t *b, size_t n) {
-    limb_t mask;
+    volatile limb_t mask;
     mask = mk_mask(flag);
     for (size_t i=0; i<n; i++) {
         ret[i] = (mask & a[i]) | (~mask & b[i]);
