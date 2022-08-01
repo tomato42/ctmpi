@@ -451,6 +451,71 @@ int test_4_limb_sub_with_borrow() {
     return 0;
 }
 
+int test_1_limb_mod() {
+    limb_t a, m;
+    limb_t res;
+    limb_t *tmp;
+
+    a = 15;
+    m = 3;
+
+    tmp = malloc(sizeof(limb_t) * mod_limb_numb(1, 1));
+
+    mod(&res, &a, 1, &m, 1, tmp);
+
+    assert(res == 0);
+
+    free(tmp);
+
+    return 0;
+}
+
+int test_1_limb_no_sub() {
+    limb_t a, m;
+    limb_t res;
+    limb_t *tmp;
+
+    a = 3;
+    m = 15;
+
+    tmp = malloc(sizeof(limb_t) * mod_limb_numb(1, 1));
+
+    mod(&res, &a, 1, &m, 1, tmp);
+
+    assert(res == 3);
+
+    free(tmp);
+
+    return 0;
+}
+
+int test_2_limb_mod_4_limb_input() {
+    limb_t a[4];
+    limb_t m[2];
+    limb_t res[2];
+    limb_t *tmp;
+
+    /* random numbers */
+    a[0] = 0xd154b255e84ef061UL;
+    a[1] = 0xc3fc3caddaa1b0f5UL;
+    a[2] = 0xbbe65f6aa639611dUL;
+    a[3] = 0x6daadb41f6e14821UL;
+
+    m[0] = 0xa2b0571f8d669c37UL;
+    m[1] = 0xfcda92360c581b2bUL;
+
+    tmp = malloc(sizeof(limb_t) * mod_limb_numb(4, 2));
+
+    mod(res, a, 4, m, 2, tmp);
+
+    assert(res[0] == 0x1fef306d0b31b340UL);
+    assert(res[1] == 0x80b59568cad5beedUL);
+
+    free(tmp);
+
+    return 0;
+}
+
 int main(int argc, char** argv) {
     test_1_limb_add();
     test_1_limb_mul();
@@ -485,4 +550,8 @@ int main(int argc, char** argv) {
     test_2_limb_sub_with_borrow();
 
     test_4_limb_sub_with_borrow();
+
+    test_1_limb_mod();
+    test_1_limb_no_sub();
+    test_2_limb_mod_4_limb_input();
 }

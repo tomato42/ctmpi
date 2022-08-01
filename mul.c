@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/types.h>
+#include <string.h>
 
 /* For multiplication we're using schoolbook multiplication,
  * so if we have two numbers, each with 6 "digits" (words)
@@ -189,6 +190,8 @@ limb_t mk_mask(limb_t flag) {
  * when flag == 1, then copies from a
  */
 void cselect(limb_t flag, limb_t *ret, limb_t *a, limb_t *b, size_t n) {
+    /* would be more efficient with non volatile mask, but then gcc
+     * generates code with jumps */
     volatile limb_t mask;
     mask = mk_mask(flag);
     for (size_t i=0; i<n; i++) {
@@ -198,6 +201,8 @@ void cselect(limb_t flag, limb_t *ret, limb_t *a, limb_t *b, size_t n) {
 
 limb_t _sub_limb(limb_t *ret, limb_t a, limb_t b, limb_t borrow) {
     limb_t borrow1, borrow2, t;
+    /* while it doesn't look constant-time, this is idiomatic code
+     * to tell compilers to use the carry bit from subtraction */
     *ret = a - borrow;
     if (*ret > a) {
         borrow1 = 1;
@@ -214,10 +219,48 @@ limb_t _sub_limb(limb_t *ret, limb_t a, limb_t b, limb_t borrow) {
     return borrow1 + borrow2;
 }
 
+/* place the result of a - b into ret, return the borrow bit.
+ * All arrays need to be n limbs long
+ */
 limb_t sub(limb_t *ret, limb_t *a, limb_t *b, size_t n) {
     limb_t borrow = 0;
     for (ssize_t i=n-1; i>-1; i--) {
         borrow = _sub_limb(&ret[i], a[i], b[i], borrow);
     }
     return borrow;
+}
+
+/* return the number of limbs necessary to allocate for the mod() tmp operand */
+size_t mod_limb_numb(size_t anum, size_t modnum) {
+    return (anum + modnum) * 3;
+}
+
+/* calculate a % mod, place the result in ret
+ * size of a is defined by anum, size of ret and mod is modnum,
+ * size of tmp is returned by mod_limb_numb()
+ */
+void mod(limb_t *ret, limb_t *a, size_t anum, limb_t *mod, size_t modnum, limb_t *tmp) {
+    limb_t *atmp, *modtmp, *rettmp;
+    limb_t res;
+
+    memset(tmp, 0, mod_limb_numb(anum, modnum) * LIMB_BYTE_SIZE);
+
+    atmp = tmp;
+    modtmp = &tmp[anum+modnum];
+    rettmp = &tmp[(anum+modnum)*2];
+
+    for (size_t i=modnum; i<modnum+anum; i++) {
+        atmp[i] = a[i-modnum];
+    }
+    for (size_t i=0; i<modnum; i++) {
+        modtmp[i] = mod[i];
+    }
+
+    for (size_t i=0; i<anum*LIMB_BIT_SIZE; i++) {
+        rshift1(modtmp, anum+modnum);
+        res = sub(rettmp, atmp, modtmp, anum+modnum);
+        cselect(res, atmp, atmp, rettmp, anum+modnum);
+    }
+
+    memcpy(ret, &atmp[anum], sizeof(limb_t)*modnum);
 }
