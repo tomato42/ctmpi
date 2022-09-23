@@ -218,13 +218,13 @@ int main(int argc, char** argv) {
 
     in_file = open(in_name, O_RDONLY);
     if (in_file == -1) {
-        fprintf(stderr, "Can't open input file %s", in_name);
+        fprintf(stderr, "Can't open input file %s\n", in_name);
         exit(1);
     }
 
-    out_file = open(out_name, O_WRONLY|O_TRUNC|O_CREAT);
+    out_file = open(out_name, O_WRONLY|O_TRUNC|O_CREAT, 0666);
     if (out_file == -1) {
-        fprintf(stderr, "Can't open output file %s", out_name);
+        fprintf(stderr, "Can't open output file %s\n", out_name);
         exit(1);
     }
 
