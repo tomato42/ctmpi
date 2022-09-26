@@ -17,6 +17,7 @@ def help_msg():
     print("           \"data.bin\" by default")
     print(" --add     Generate data for addition tests (default)")
     print(" --sub     Generate data for subtraction tests")
+    print(" --mul     Generate data for multiplication tests")
     print(" -h        This message")
 
 limb_size = 8
@@ -32,7 +33,7 @@ data_file = open(data_out, "wb")
 
 argv = sys.argv[1:]
 
-opts, args = getopt.getopt(argv, "N:b:n:l:o:h", ["add", "sub"])
+opts, args = getopt.getopt(argv, "N:b:n:l:o:h", ["add", "sub", "mul"])
 for opt, arg in opts:
     if opt == "-h":
         help_msg()
@@ -51,6 +52,8 @@ for opt, arg in opts:
         oper = "add"
     elif opt == "--sub":
         oper = "sub"
+    elif opt == "--mul":
+        oper = "mul"
     else:
         print("Unrecognised option: {0}".format(opt))
         help_msg()
@@ -63,8 +66,6 @@ if args:
 
 # make a modulus the count of numbers that can be represented in this many bits
 mod = 2**(8*limb_size*nlimb)
-
-print(hex(mod-1))
 
 probes = [
         ("null-null", (0, 0)),
@@ -104,6 +105,8 @@ for _ in range(N):
         data_file.write(val_b.to_bytes(length=limb_size*nlimb, byteorder="big"))
         if oper == "add":
             data_file.write(((val_a + val_b) & (mod-1)).to_bytes(length=limb_size*nlimb, byteorder="big"))
+        elif oper == "mul":
+            data_file.write((val_a * val_b).to_bytes(length=limb_size*nlimb*2, byteorder="big"))
         else:
             assert oper == "sub"
             data_file.write(((val_a - val_b) & (mod-1)).to_bytes(length=limb_size*nlimb, byteorder="big"))

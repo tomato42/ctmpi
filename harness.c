@@ -318,6 +318,146 @@ fail:
     return ret;
 }
 
+int time_mul(size_t numb, int in_file, int out_file) {
+    char *buf=NULL;
+    char prn_buf[1024];
+    limb_t *a=NULL, *b=NULL;
+    limb_t *prod=NULL, *exp_prod=NULL;
+    limb_t *tmp=NULL;
+    int ret = 0;
+    ssize_t r_ret;
+    size_t limb_count = numb / LIMB_BYTE_SIZE;
+
+    uint32_t time_before_high = 0, time_before_low = 0, time_after_high = 0,
+             time_after_low = 0;
+
+    r_ret = write(out_file, "mul_times\n", 10);
+    if (r_ret != 10) {
+        fprintf(stderr, "Writing header to output file failed\n");
+        ret = 1;
+        goto fail;
+    }
+
+    buf = malloc(sizeof(char) * numb * 2);
+    if (buf == NULL) {
+        fprintf(stderr, "malloc fail (buf)\n");
+        ret = 1;
+        goto fail;
+    }
+    a = malloc(sizeof(limb_t) * limb_count);
+    if (a == NULL) {
+        fprintf(stderr, "malloc fail (a)\n");
+        ret = 1;
+        goto fail;
+    }
+    b = malloc(sizeof(limb_t) * limb_count);
+    if (b == NULL) {
+        fprintf(stderr, "malloc fail (b)\n");
+        ret = 1;
+        goto fail;
+    }
+    prod = malloc(sizeof(limb_t) * limb_count * 2);
+    if (prod == NULL) {
+        fprintf(stderr, "malloc fail (prod)\n");
+        ret = 1;
+        goto fail;
+    }
+    exp_prod = malloc(sizeof(limb_t) * limb_count * 2);
+    if (exp_prod == NULL) {
+        fprintf(stderr, "malloc fail (exp_prod)\n");
+        ret = 1;
+        goto fail;
+    }
+    tmp = malloc(sizeof(limb_t) * mul_limb_numb(limb_count));
+    if (tmp == NULL) {
+        fprintf(stderr, "malloc fail (tmp)\n");
+        ret = 1;
+        goto fail;
+    }
+
+    while ((r_ret = read(in_file, buf, numb)) > 0) {
+        if (r_ret != numb) {
+            fprintf(stderr, "read less data than expected (truncated file?)\n");
+            ret = 1;
+            goto fail;
+        }
+        be_buf_to_limb_t(buf, a, limb_count);
+
+        r_ret = read(in_file, buf, numb);
+        if (r_ret <= 0) {
+            fprintf(stderr, "can't read (b) value from input file (truncated "
+                    "file?)\n");
+            ret = 1;
+            goto fail;
+        }
+        be_buf_to_limb_t(buf, b, limb_count);
+
+        r_ret = read(in_file, buf, numb * 2);
+        if (r_ret <= 0) {
+            fprintf(stderr, "can't read (exp_prod) value from input file "
+                    "(truncated file?)\n");
+            ret = 1;
+            goto fail;
+        }
+        be_buf_to_limb_t(buf, exp_prod, limb_count * 2);
+
+        asm volatile (
+            "CPUID\n\t"
+            "RDTSC\n\t"
+            "mov %%edx, %0\n\t"
+            "mov %%eax, %1\n\t" : "=r" (time_before_high),
+            "=r" (time_before_low)::
+            "%rax", "%rbx", "%rcx", "%rdx");
+
+        mul(prod, a, b, limb_count, tmp);
+
+        asm volatile (
+            "RDTSCP\n\t"
+            "mov %%edx, %0\n\t"
+            "mov %%eax, %1\n\t"
+            "CPUID\n\t": "=r" (time_after_high),
+            "=r" (time_after_low)::
+            "%rax", "%rbx", "%rcx", "%rdx");
+
+        if (memcmp(prod, exp_prod, numb) != 0) {
+            fprintf(stderr, "mul() result incorrect\n");
+            ret = 1;
+            goto fail;
+        }
+
+        r_ret = snprintf(prn_buf, 1024, "%d\n",
+            (uint32_t)(((uint64_t)time_after_high<<32 | time_after_low)-
+            ((uint64_t)time_before_high<<32 | time_before_low)));
+        if (r_ret >= 1024) {
+            fprintf(stderr, "Unexpected snprintf output\n");
+            ret = 1;
+            goto fail;
+        }
+        r_ret = write(out_file, prn_buf, r_ret);
+        if (r_ret <= 0) {
+            fprintf(stderr, "Write error\n");
+            ret = 1;
+            goto fail;
+        }
+    }
+
+    if (r_ret < 0) {
+        fprintf(stderr, "Reading from input file failed\n");
+        ret = 1;
+        goto fail;
+    }
+
+fail:
+    free(buf);
+    free(a);
+    free(b);
+    free(prod);
+    free(exp_prod);
+    free(tmp);
+    return ret;
+}
+
+
 int main(int argc, char** argv) {
     int ret = 0;
     int opt;
@@ -387,6 +527,9 @@ int main(int argc, char** argv) {
             break;
         case Sub:
             ret = time_sub(numb, in_file, out_file);
+            break;
+        case Mul:
+            ret = time_mul(numb, in_file, out_file);
             break;
         default:
             fprintf(stderr, "Unknown operation: %d\n", oper);
