@@ -1,4 +1,5 @@
 #include "mul.c"
+#include <inttypes.h>
 #include <byteswap.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -33,6 +34,158 @@ void be_buf_to_limb_t(char *buf, limb_t *out, size_t nlimb) {
 #endif
     }
 }
+
+int time_sub(size_t numb, int in_file, int out_file) {
+    char *buf=NULL;
+    char prn_buf[1024];
+    limb_t *a=NULL, *b=NULL;
+    limb_t *diff=NULL, *exp_diff=NULL;
+    int ret = 0;
+    ssize_t r_ret;
+    size_t limb_count = numb / LIMB_BYTE_SIZE;
+
+    uint32_t time_before_high = 0, time_before_low = 0, time_after_high = 0,
+             time_after_low = 0;
+
+    r_ret = write(out_file, "sub_times\n", 10);
+    if (r_ret != 10) {
+        fprintf(stderr, "Writing header to output file failed\n");
+        ret = 1;
+        goto fail;
+    }
+
+    buf = malloc(sizeof(char) * numb);
+    if (buf == NULL) {
+        fprintf(stderr, "malloc fail (buf)\n");
+        ret = 1;
+        goto fail;
+    }
+    a = malloc(sizeof(limb_t) * limb_count);
+    if (a == NULL) {
+        fprintf(stderr, "malloc fail (a)\n");
+        ret = 1;
+        goto fail;
+    }
+    b = malloc(sizeof(limb_t) * limb_count);
+    if (b == NULL) {
+        fprintf(stderr, "malloc fail (b)\n");
+        ret = 1;
+        goto fail;
+    }
+    diff = malloc(sizeof(limb_t) * limb_count);
+    if (diff == NULL) {
+        fprintf(stderr, "malloc fail (diff)\n");
+        ret = 1;
+        goto fail;
+    }
+    exp_diff = malloc(sizeof(limb_t) * limb_count);
+    if (exp_diff == NULL) {
+        fprintf(stderr, "malloc fail (exp_diff)\n");
+        ret = 1;
+        goto fail;
+    }
+
+    while ((r_ret = read(in_file, buf, numb)) > 0) {
+        if (r_ret != numb) {
+            fprintf(stderr, "read less data than expected (truncated file?)\n");
+            ret = 1;
+            goto fail;
+        }
+        be_buf_to_limb_t(buf, a, limb_count);
+
+        r_ret = read(in_file, buf, numb);
+        if (r_ret <= 0) {
+            fprintf(stderr, "can't read (b) value from input file (truncated "
+                    "file?)\n");
+            ret = 1;
+            goto fail;
+        }
+        be_buf_to_limb_t(buf, b, limb_count);
+
+        r_ret = read(in_file, buf, numb);
+        if (r_ret <= 0) {
+            fprintf(stderr, "can't read (exp_diff) value from input file "
+                    "(truncated file?)\n");
+            ret = 1;
+            goto fail;
+        }
+        be_buf_to_limb_t(buf, exp_diff, limb_count);
+
+        asm volatile (
+            "CPUID\n\t"
+            "RDTSC\n\t"
+            "mov %%edx, %0\n\t"
+            "mov %%eax, %1\n\t" : "=r" (time_before_high),
+            "=r" (time_before_low)::
+            "%rax", "%rbx", "%rcx", "%rdx");
+
+        sub(diff, a, b, limb_count);
+
+        asm volatile (
+            "RDTSCP\n\t"
+            "mov %%edx, %0\n\t"
+            "mov %%eax, %1\n\t"
+            "CPUID\n\t": "=r" (time_after_high),
+            "=r" (time_after_low)::
+            "%rax", "%rbx", "%rcx", "%rdx");
+
+        if (memcmp(diff, exp_diff, numb) != 0) {
+            fprintf(stderr, "sub() result incorrect\n");
+            printf("a: ");
+            for (size_t j=0; j<limb_count; j++) {
+                printf("%016" PRIx64, a[j]);
+            }
+            printf("\n");
+            printf("b: ");
+            for (size_t j=0; j<limb_count; j++) {
+                printf("%016" PRIx64, b[j]);
+            }
+            printf("\n");
+            printf("diff: ");
+            for (size_t j=0; j<limb_count; j++) {
+                printf("%016" PRIx64, diff[j]);
+            }
+            printf("\n");
+            printf("exp_diff: ");
+            for (size_t j=0; j<limb_count; j++) {
+                printf("%016" PRIx64, exp_diff[j]);
+            }
+            printf("\n");
+            ret = 1;
+            goto fail;
+        }
+
+        r_ret = snprintf(prn_buf, 1024, "%d\n",
+            (uint32_t)(((uint64_t)time_after_high<<32 | time_after_low)-
+            ((uint64_t)time_before_high<<32 | time_before_low)));
+        if (r_ret >= 1024) {
+            fprintf(stderr, "Unexpected snprintf output\n");
+            ret = 1;
+            goto fail;
+        }
+        r_ret = write(out_file, prn_buf, r_ret);
+        if (r_ret <= 0) {
+            fprintf(stderr, "Write error\n");
+            ret = 1;
+            goto fail;
+        }
+    }
+
+    if (r_ret < 0) {
+        fprintf(stderr, "Reading from input file failed\n");
+        ret = 1;
+        goto fail;
+    }
+
+fail:
+    free(buf);
+    free(a);
+    free(b);
+    free(diff);
+    free(exp_diff);
+    return ret;
+}
+
 
 int time_add(size_t numb, int in_file, int out_file) {
     char *buf=NULL;
@@ -232,9 +385,12 @@ int main(int argc, char** argv) {
         case Add:
             ret = time_add(numb, in_file, out_file);
             break;
-        /*case Sub:
+        case Sub:
             ret = time_sub(numb, in_file, out_file);
-            break;*/
+            break;
+        default:
+            fprintf(stderr, "Unknown operation: %d\n", oper);
+            exit(1);
     }
 
     if (close(out_file) == -1) {
