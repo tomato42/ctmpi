@@ -102,6 +102,8 @@ To analyse the timing data, download tlsfuzzer and install the
 dependencies needed for timing analysis
 (`pip3 install -r requirements-timing.txt`).
 
+Perform the following steps for each directory in turn:
+
 Convert the data into tuples:
 ```
 PYTHONPATH=~/tlsfuzzer python3 ~/tlsfuzzer/tlsfuzzer/extract.py -l log.csv -o . --raw-times raw_times.csv
