@@ -279,7 +279,7 @@ int test_1_limb_rshift_insert_zero() {
     a = -1;
 
     rshift1(&a, 1);
-    assert(a == (limb_t)-1 ^ ((limb_t)1 << (LIMB_BIT_SIZE - 1)));
+    assert(a == ((limb_t)-1 ^ ((limb_t)1 << (LIMB_BIT_SIZE - 1))));
 
     return 0;
 }
@@ -335,8 +335,8 @@ int test_cselect_2_limb_sel_b() {
 
     cselect(flag, ret, a, b, 2);
 
-    assert(ret[0] = 10);
-    assert(ret[1] = 11);
+    assert(ret[0] == 10);
+    assert(ret[1] == 11);
 
     return 0;
 }
@@ -355,8 +355,8 @@ int test_cselect_2_limb_sel_a() {
 
     cselect(flag, ret, a, b, 2);
 
-    assert(ret[0] = 1);
-    assert(ret[1] = 2);
+    assert(ret[0] == 1);
+    assert(ret[1] == 2);
 
     return 0;
 }
