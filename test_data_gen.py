@@ -91,13 +91,19 @@ probes = [
         # propagagation over all possible limbs
         ("mod-1-mod-1", (mod-1, mod-1)),
         # some carry propagation in low limbs:
+        ]
+if nlimb >= 4:
+    probes += [
         ("qqword-qqword", (2**(8*limb_size*4)-1, 2**(8*limb_size*4)-1)),
+        ]
+if nlimb >= 3:
+    probes += [
         # carry propagation in mid limbs:
-        ("mid-mid", ((2**(8*limb_size*8)-1)<<(8*limb_size*4),
-                     (2**(8*limb_size*8)-1)<<(8*limb_size*4))),
+        ("mid-mid", ((2**(8*limb_size*(nlimb//3))-1)<<(8*limb_size*(nlimb*2//3)),
+                     (2**(8*limb_size*(nlimb//3))-1)<<(8*limb_size*(nlimb*2//3)))),
         # carry propagation in high limbs:
-        ("high-high", (2**(8*limb_size*nlimb)-1-(2**(8*limb_size*24)-1),
-                       2**(8*limb_size*nlimb)-1-(2**(8*limb_size*24)-1))),
+        ("high-high", (2**(8*limb_size*nlimb)-1-(2**(8*limb_size*(nlimb*2//3))-1),
+                       2**(8*limb_size*nlimb)-1-(2**(8*limb_size*(nlimb*2//3))-1))),
         ]
 
 mod_probes = [
