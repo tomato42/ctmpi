@@ -713,6 +713,7 @@ int main(int argc, char** argv) {
                 break;
             case '2':
                 sscanf(optarg, "%zi", &nummod);
+                break;
             case 'a':
                 oper = Add;
                 break;
