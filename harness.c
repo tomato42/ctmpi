@@ -1,6 +1,6 @@
 #include "mul.c"
 #include <inttypes.h>
-#include <byteswap.h>
+#include <endian.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,9 +29,9 @@ void help(char *name) {
 void be_buf_to_limb_t(char *buf, limb_t *out, size_t nlimb) {
     for (size_t i=0; i<nlimb; i++) {
 #if LIMB_BYTE_SIZE == 8
-        out[i] = bswap_64(((limb_t*)buf)[i]);
+        out[i] = be64toh(((limb_t*)buf)[i]);
 #else
-        out[i] = bswap_32(((limb_t*)buf)[i]);
+        out[i] = be32toh(((limb_t*)buf)[i]);
 #endif
     }
 }
@@ -45,8 +45,12 @@ int time_sub(size_t numb, int in_file, int out_file) {
     ssize_t r_ret;
     size_t limb_count = numb / LIMB_BYTE_SIZE;
 
+#ifdef __s390x__
+    uint64_t time_before = 0, time_after = 0;
+#else
     uint32_t time_before_high = 0, time_before_low = 0, time_after_high = 0,
              time_after_low = 0;
+#endif /* ifdef __s390x__ */
 
     r_ret = write(out_file, "sub_times\n", 10);
     if (r_ret != 10) {
@@ -112,6 +116,10 @@ int time_sub(size_t numb, int in_file, int out_file) {
         }
         be_buf_to_limb_t(buf, exp_diff, limb_count);
 
+#ifdef __s390x__
+        asm volatile (
+            "stck    %0": "=Q" (time_before) :: "memory", "cc");
+#else
         asm volatile (
             "CPUID\n\t"
             "RDTSC\n\t"
@@ -119,9 +127,14 @@ int time_sub(size_t numb, int in_file, int out_file) {
             "mov %%eax, %1\n\t" : "=r" (time_before_high),
             "=r" (time_before_low)::
             "%rax", "%rbx", "%rcx", "%rdx");
+#endif /* ifdef __s390x__ */
 
         sub(diff, a, b, limb_count);
 
+#ifdef __s390x__
+        asm volatile (
+            "stck    %0": "=Q" (time_after) :: "memory", "cc");
+#else
         asm volatile (
             "RDTSCP\n\t"
             "mov %%edx, %0\n\t"
@@ -129,6 +142,7 @@ int time_sub(size_t numb, int in_file, int out_file) {
             "CPUID\n\t": "=r" (time_after_high),
             "=r" (time_after_low)::
             "%rax", "%rbx", "%rcx", "%rdx");
+#endif /* ifdef __s390x__ */
 
         if (memcmp(diff, exp_diff, numb) != 0) {
             fprintf(stderr, "sub() result incorrect\n");
@@ -156,9 +170,13 @@ int time_sub(size_t numb, int in_file, int out_file) {
             goto fail;
         }
 
+#ifdef __s390x__
+        r_ret = snprintf(prn_buf, 1024, "%"PRId64"\n", time_after - time_before);
+#else
         r_ret = snprintf(prn_buf, 1024, "%d\n",
             (uint32_t)(((uint64_t)time_after_high<<32 | time_after_low)-
             ((uint64_t)time_before_high<<32 | time_before_low)));
+#endif /* ifdef __s390x__ */
         if (r_ret >= 1024) {
             fprintf(stderr, "Unexpected snprintf output\n");
             ret = 1;
@@ -197,8 +215,12 @@ int time_add(size_t numb, int in_file, int out_file) {
     ssize_t r_ret;
     size_t limb_count = numb / LIMB_BYTE_SIZE;
 
+#ifdef __s390x__
+    uint64_t time_before = 0, time_after = 0;
+#else
     uint32_t time_before_high = 0, time_before_low = 0, time_after_high = 0,
              time_after_low = 0;
+#endif /* ifdef __s390x__ */
 
     r_ret = write(out_file, "add_times\n", 10);
     if (r_ret != 10) {
@@ -264,6 +286,10 @@ int time_add(size_t numb, int in_file, int out_file) {
         }
         be_buf_to_limb_t(buf, exp_sum, limb_count);
 
+#ifdef __s390x__
+        asm volatile (
+            "stck    %0": "=Q" (time_before) :: "memory", "cc");
+#else
         asm volatile (
             "CPUID\n\t"
             "RDTSC\n\t"
@@ -271,9 +297,14 @@ int time_add(size_t numb, int in_file, int out_file) {
             "mov %%eax, %1\n\t" : "=r" (time_before_high),
             "=r" (time_before_low)::
             "%rax", "%rbx", "%rcx", "%rdx");
+#endif /* ifdef __s390x__ */
 
         add(sum, a, b, limb_count);
 
+#ifdef __s390x__
+        asm volatile (
+            "stck    %0": "=Q" (time_after) :: "memory", "cc");
+#else
         asm volatile (
             "RDTSCP\n\t"
             "mov %%edx, %0\n\t"
@@ -281,16 +312,41 @@ int time_add(size_t numb, int in_file, int out_file) {
             "CPUID\n\t": "=r" (time_after_high),
             "=r" (time_after_low)::
             "%rax", "%rbx", "%rcx", "%rdx");
+#endif /* ifdef __s390x__ */
 
         if (memcmp(sum, exp_sum, numb) != 0) {
             fprintf(stderr, "add() result incorrect\n");
+            printf("a: ");
+            for (size_t j=0; j<limb_count; j++) {
+                printf("%016" PRIx64, a[j]);
+            }
+            printf("\n");
+            printf("b: ");
+            for (size_t j=0; j<limb_count; j++) {
+                printf("%016" PRIx64, b[j]);
+            }
+            printf("\n");
+            printf("sum: ");
+            for (size_t j=0; j<limb_count; j++) {
+                printf("%016" PRIx64, sum[j]);
+            }
+            printf("\n");
+            printf("exp_sum: ");
+            for (size_t j=0; j<limb_count; j++) {
+                printf("%016" PRIx64, exp_sum[j]);
+            }
+            printf("\n");
             ret = 1;
             goto fail;
         }
 
+#ifdef __s390x__
+        r_ret = snprintf(prn_buf, 1024, "%"PRId64"\n", time_after - time_before);
+#else
         r_ret = snprintf(prn_buf, 1024, "%d\n",
             (uint32_t)(((uint64_t)time_after_high<<32 | time_after_low)-
             ((uint64_t)time_before_high<<32 | time_before_low)));
+#endif /* ifdef __s390x__ */
         if (r_ret >= 1024) {
             fprintf(stderr, "Unexpected snprintf output\n");
             ret = 1;
@@ -329,8 +385,12 @@ int time_mul(size_t numb, int in_file, int out_file) {
     ssize_t r_ret;
     size_t limb_count = numb / LIMB_BYTE_SIZE;
 
+#ifdef __s390x__
+    uint64_t time_before = 0, time_after = 0;
+#else
     uint32_t time_before_high = 0, time_before_low = 0, time_after_high = 0,
              time_after_low = 0;
+#endif /* ifdef __s390x__ */
 
     r_ret = write(out_file, "mul_times\n", 10);
     if (r_ret != 10) {
@@ -402,6 +462,10 @@ int time_mul(size_t numb, int in_file, int out_file) {
         }
         be_buf_to_limb_t(buf, exp_prod, limb_count * 2);
 
+#ifdef __s390x__
+        asm volatile (
+            "stck    %0": "=Q" (time_before) :: "memory", "cc");
+#else
         asm volatile (
             "CPUID\n\t"
             "RDTSC\n\t"
@@ -409,9 +473,14 @@ int time_mul(size_t numb, int in_file, int out_file) {
             "mov %%eax, %1\n\t" : "=r" (time_before_high),
             "=r" (time_before_low)::
             "%rax", "%rbx", "%rcx", "%rdx");
+#endif /* ifdef __s390x__ */
 
         mul(prod, a, b, limb_count, tmp);
 
+#ifdef __s390x__
+        asm volatile (
+            "stck    %0": "=Q" (time_after) :: "memory", "cc");
+#else
         asm volatile (
             "RDTSCP\n\t"
             "mov %%edx, %0\n\t"
@@ -419,6 +488,7 @@ int time_mul(size_t numb, int in_file, int out_file) {
             "CPUID\n\t": "=r" (time_after_high),
             "=r" (time_after_low)::
             "%rax", "%rbx", "%rcx", "%rdx");
+#endif /* ifdef __s390x__ */
 
         if (memcmp(prod, exp_prod, numb) != 0) {
             fprintf(stderr, "mul() result incorrect\n");
@@ -426,9 +496,13 @@ int time_mul(size_t numb, int in_file, int out_file) {
             goto fail;
         }
 
+#ifdef __s390x__
+        r_ret = snprintf(prn_buf, 1024, "%"PRId64"\n", time_after - time_before);
+#else
         r_ret = snprintf(prn_buf, 1024, "%d\n",
             (uint32_t)(((uint64_t)time_after_high<<32 | time_after_low)-
             ((uint64_t)time_before_high<<32 | time_before_low)));
+#endif /* ifdef __s390x__ */
         if (r_ret >= 1024) {
             fprintf(stderr, "Unexpected snprintf output\n");
             ret = 1;
@@ -469,8 +543,12 @@ int time_mod(size_t numb, size_t nummod, int in_file, int out_file) {
     size_t limb_count = numb / LIMB_BYTE_SIZE;
     size_t mod_limb_count = nummod / LIMB_BYTE_SIZE;
 
+#ifdef __s390x__
+    uint64_t time_before = 0, time_after = 0;
+#else
     uint32_t time_before_high = 0, time_before_low = 0, time_after_high = 0,
              time_after_low = 0;
+#endif /* ifdef __s390x__ */
 
     r_ret = write(out_file, "mod_times\n", 10);
     if (r_ret != 10) {
@@ -542,6 +620,10 @@ int time_mod(size_t numb, size_t nummod, int in_file, int out_file) {
         }
         be_buf_to_limb_t(buf, exp_rem, mod_limb_count);
 
+#ifdef __s390x__
+        asm volatile (
+            "stck    %0": "=Q" (time_before) :: "memory", "cc");
+#else
         asm volatile (
             "CPUID\n\t"
             "RDTSC\n\t"
@@ -549,9 +631,14 @@ int time_mod(size_t numb, size_t nummod, int in_file, int out_file) {
             "mov %%eax, %1\n\t" : "=r" (time_before_high),
             "=r" (time_before_low)::
             "%rax", "%rbx", "%rcx", "%rdx");
+#endif /* ifdef __s390x__ */
 
         mod(rem, a, limb_count, b, mod_limb_count, tmp);
 
+#ifdef __s390x__
+        asm volatile (
+            "stck    %0": "=Q" (time_after) :: "memory", "cc");
+#else
         asm volatile (
             "RDTSCP\n\t"
             "mov %%edx, %0\n\t"
@@ -559,6 +646,7 @@ int time_mod(size_t numb, size_t nummod, int in_file, int out_file) {
             "CPUID\n\t": "=r" (time_after_high),
             "=r" (time_after_low)::
             "%rax", "%rbx", "%rcx", "%rdx");
+#endif /* ifdef __s390x__ */
 
         if (memcmp(rem, exp_rem, nummod) != 0) {
             fprintf(stderr, "mod() result incorrect\n");
@@ -566,9 +654,13 @@ int time_mod(size_t numb, size_t nummod, int in_file, int out_file) {
             goto fail;
         }
 
+#ifdef __s390x__
+        r_ret = snprintf(prn_buf, 1024, "%"PRId64"\n", time_after - time_before);
+#else
         r_ret = snprintf(prn_buf, 1024, "%d\n",
             (uint32_t)(((uint64_t)time_after_high<<32 | time_after_low)-
             ((uint64_t)time_before_high<<32 | time_before_low)));
+#endif /* ifdef __s390x__ */
         if (r_ret >= 1024) {
             fprintf(stderr, "Unexpected snprintf output\n");
             ret = 1;
