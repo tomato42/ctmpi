@@ -36,6 +36,9 @@ uint64_t get_time_before() {
 #elif defined( __PPC64__ )
     asm volatile (
         "mftb    %0": "=r" (time_before) :: "memory", "cc");
+#elif defined( __aarch64__ )
+    asm volatile (
+        "mrs %0, cntvct_el0": "=r" (time_before) :: "memory", "cc");
 #elif defined( __x86_64__ )
     uint32_t time_before_high = 0, time_before_low = 0;
     asm volatile (
@@ -69,6 +72,9 @@ uint64_t get_time_after() {
      */
     asm volatile (
         "mftb    %0": "=r" (time_after) :: "memory", "cc");
+#elif defined( __aarch64__ )
+    asm volatile (
+        "mrs %0, cntvct_el0": "=r" (time_after) :: "memory", "cc");
 #elif defined( __x86_64__ )
     uint32_t time_after_high = 0, time_after_low = 0;
     asm volatile (
