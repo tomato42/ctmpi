@@ -30,10 +30,13 @@ void help(char *name) {
  */
 uint64_t get_time_before() {
     uint64_t time_before = 0;
-#ifdef __s390x__
+#if defined( __s390x__ )
     asm volatile (
         "stck    %0": "=Q" (time_before) :: "memory", "cc");
-#else
+#elif defined( __PPC64__ )
+    asm volatile (
+        "mftb    %0": "=r" (time_before) :: "memory", "cc");
+#elif defined( __x86_64__ )
     uint32_t time_before_high = 0, time_before_low = 0;
     asm volatile (
         "CPUID\n\t"
@@ -43,6 +46,8 @@ uint64_t get_time_before() {
         "=r" (time_before_low)::
         "%rax", "%rbx", "%rcx", "%rdx");
     time_before = (uint64_t)time_before_high<<32 | time_before_low;
+#else
+#error Unsupported architecture
 #endif /* ifdef __s390x__ */
     return time_before;
 }
@@ -53,10 +58,18 @@ uint64_t get_time_before() {
  */
 uint64_t get_time_after() {
     uint64_t time_after = 0;
-#ifdef __s390x__
+#if defined( __s390x__ )
     asm volatile (
         "stck    %0": "=Q" (time_after) :: "memory", "cc");
-#else
+#elif defined( __PPC64__ )
+    /* Note: mftb can be used with a single instruction on ppc64, for ppc32
+     * it's necessary to read upper and lower 32bits of the values in two
+     * separate calls and verify that we didn't do that during low value
+     * overflow
+     */
+    asm volatile (
+        "mftb    %0": "=r" (time_after) :: "memory", "cc");
+#elif defined( __x86_64__ )
     uint32_t time_after_high = 0, time_after_low = 0;
     asm volatile (
         "RDTSCP\n\t"
@@ -66,6 +79,8 @@ uint64_t get_time_after() {
         "=r" (time_after_low)::
         "%rax", "%rbx", "%rcx", "%rdx");
     time_after = (uint64_t)time_after_high<<32 | time_after_low;
+#else
+#error Unsupported architecture
 #endif /* ifdef __s390x__ */
     return time_after;
 }
