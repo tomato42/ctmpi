@@ -264,3 +264,82 @@ void mod(limb_t *ret, limb_t *a, size_t anum, limb_t *mod, size_t modnum, limb_t
 
     memcpy(ret, &atmp[anum], sizeof(limb_t)*modnum);
 }
+
+/* necessary size of tmp for a _mul_add_limb() call with provided anum */
+size_t _mul_add_limb_numb(size_t anum) {
+    return 2*(anum+1);
+}
+
+/* multiply a by m, add to ret, return carry
+ */
+limb_t _mul_add_limb(limb_t *ret, limb_t *a, size_t anum, limb_t m, limb_t *tmp) {
+    limb_t carry = 0;
+    limb_t *r_odd, *r_even;
+
+    memset(tmp, 0, sizeof(limb_t) * (anum+1)*2);
+
+    r_odd = tmp;
+    r_even = &tmp[anum+1];
+
+    for (size_t i=0; i<anum; i++) {
+        /* place the results from even and odd limbs in separate arrays
+         * so that we have to worry about carry just once */
+        if (i % 2 == 0) {
+            _mul_limb(&r_even[i], &r_even[i+1], a[i], m);
+        } else {
+            _mul_limb(&r_odd[i], &r_odd[i+1], a[i], m);
+        }
+    }
+    /* assert: add() carry here will be equal zero */
+    add(r_even, r_even, r_odd, anum+1);
+    /* while here it will not overflow as the max value from multiplication
+     * is -2 while max overflow from addition is 1, so the max value of
+     * carry is -1 (i.e. max int)
+     */
+    carry = add(ret, ret, &r_even[1], anum) + r_even[0];
+
+    return carry;
+}
+
+size_t mod_montgomery_limb_numb(size_t modnum) {
+    return modnum * 2 + _mul_add_limb_numb(modnum);
+}
+
+/* calculate a % mod, place result in ret
+ * assumes that a is in mongomery form with the R (Mongomery modulus) being
+ * smallest power of two big enough to fit mod and that's also a power
+ * of the count of number of bits in limb_t (B).
+ * For calculation, we also need n', such that mod * n' == -1 mod B.
+ * anum must be <= 2*modnum
+ * ret needs to be modnum words long
+ * tmp needs to be mod_montgomery_limb_numb(modnum) limbs long
+ */
+void mod_montgomery(limb_t *ret, limb_t *a, size_t anum, limb_t *mod, size_t modnum, limb_t ni0, limb_t *tmp) {
+    limb_t carry, v;
+    limb_t *res, *rp, *tmp2;
+    res = tmp;
+    /* for intermediate result we need an integer twice as long as modulus
+     * but keep the input in the least significant limbs
+     */
+    memset(res, 0, sizeof(limb_t) * (modnum*2));
+    memcpy(&res[modnum*2-anum], a, sizeof(limb_t) * anum);
+    rp = &res[modnum];
+    tmp2 = &res[modnum*2];
+
+    carry = 0;
+
+    /* add multiples of the modulus to the value until R divides it cleanly */
+    for (ssize_t i = modnum; i > 0; i--, rp--) {
+        v = _mul_add_limb(rp, mod, modnum, (rp[modnum-1]*ni0) & -1UL, tmp2);
+        v = (v + carry + rp[-1]) & -1UL;
+        carry |= (v != rp[-1]);
+        carry &= (v <= rp[-1]);
+        rp[-1] = v;
+    }
+
+    /* perform the final reduction by mod... */
+    carry -= sub(ret, rp, mod, modnum);
+
+    /* ...conditionally */
+    cselect(carry, ret, rp, ret, modnum);
+}
