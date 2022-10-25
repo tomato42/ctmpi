@@ -96,6 +96,30 @@ taskset --cpu-list 1 ../harness -d -i data.bin -o raw_times.csv -n $((8*64)) -2 
 
 Delete the `data.bin` after.
 
+Modulo Montgomery
+-----------------
+
+Create test directory:
+```
+mkdir mod_mont_time
+```
+
+Create test data:
+```
+python3 ../test_data_gen.py -N 100000 --mod-mont -n 64 -2 32
+```
+(since mod_montgomery() is used for reducing results of different operations,
+not just multiplication, the input to mod() can be up to twice as long as the
+modulus size, but we mostly care about feeding the output of mul(),
+so twice as large as output it is)
+
+Run the harness:
+```
+taskset --cpu-list 1 ../harness -D -i data.bin -o raw_times.csv -n $((8*64)) -2 $((8*32))
+```
+
+Delete the `data.bin` after.
+
 Analysis
 --------
 To analyse the timing data, download tlsfuzzer and install the
