@@ -21,7 +21,8 @@ def help_msg():
     print(" --sub     Generate data for subtraction tests")
     print(" --mul     Generate data for multiplication tests")
     print(" --mod     Generate data for modulo tests")
-    print(" -h        This message")
+    print(" --mod-mont Generate data for the modulo Montgomery tests")
+    print(" -h/--help This message")
 
 limb_size = 8
 nlimb = 32  # operate on 2048 bit numbers
@@ -37,9 +38,9 @@ data_file = open(data_out, "wb")
 
 argv = sys.argv[1:]
 
-opts, args = getopt.getopt(argv, "N:b:n:2:l:o:h", ["add", "sub", "mul", "mod"])
+opts, args = getopt.getopt(argv, "N:b:n:2:l:o:h", ["add", "sub", "mul", "mod", "mod-mont", "help"])
 for opt, arg in opts:
-    if opt == "-h":
+    if opt == "-h" or opt == "--help":
         help_msg()
         sys.exit(0)
     elif opt == "-N":
@@ -62,6 +63,8 @@ for opt, arg in opts:
         oper = "mul"
     elif opt == "--mod":
         oper = "mod"
+    elif opt == "--mod-mont":
+        oper = "mod-mont"
     else:
         print("Unrecognised option: {0}".format(opt))
         help_msg()
@@ -123,14 +126,36 @@ mod_probes = [
         ("max-mod-1>>2*limb", (mod-1, (mod_mod - 1) >> (limb_size * 8 * 2))),
         ]
 
+import random
+
+mod_mont_probes = [
+        ("null-mod-1", (0, mod_mod-1)),
+        ("one-mod-1", (1, mod_mod-1)),
+        ("two-mod-1", (2, mod_mod-1)),
+        ("qword-mod-1", (2**(8*limb_size)-1, mod_mod-1)),
+        ("mod-2-mod-1", (mod_mod-2, mod_mod-1)),
+        ("mod+2-mod-1", (mod_mod+2, mod_mod-1)),
+        ("rnd-mod-1", (random.getrandbits(8*limb_size*nlimb), mod_mod-1)),
+        ("max-mod-1", (mod-1, mod_mod-1)),
+        ("max-1-mod-1", (mod-2, mod_mod-1)),
+        ("max-2-mod-1", (mod-3, mod_mod-1)),
+        ("max-2-mod-3", (mod-3, mod_mod-3)),
+        ("mod-1-sq-mod-1", (((mod_mod-1)**2)%(mod-1), mod_mod-1)),
+        ("null-mod-1>>limb", (0, (mod_mod - 1) >> (limb_size * 8))),
+        ("null-mod-1>>2*limb", (0, (mod_mod - 1) >> (limb_size * 8 * 2))),
+        ("max-mod-1>>limb", (mod-1, (mod_mod - 1) >> (limb_size * 8))),
+        ("max-mod-1>>2*limb", (mod-1, (mod_mod - 1) >> (limb_size * 8 * 2))),
+        ]
+
 if oper == "mod":
     probes = mod_probes
+elif oper == "mod-mont":
+    probes = mod_mont_probes
 
 log_file.write(",".join(name for name, _ in probes))
 log_file.write("\n")
 
 rand = random.SystemRandom()
-
 o = [None] * len(probes)
 for _ in range(N):
     order = random.sample(range(len(probes)), len(probes))
@@ -138,19 +163,38 @@ for _ in range(N):
         val_a, val_b = probes[pos][1]
         # write inputs to the file
         assert val_a < mod
-        data_file.write(val_a.to_bytes(length=limb_size*nlimb, byteorder="big"))
-        if oper == "mod":
+
+        if oper == "mod-mont":
+            # for mod montgomery the input needs to be in montgomery form
+            R = mod_mod
+            # reduce the value modulo val_b enough to fit into nlimb space but
+            # not further
+            x = (val_a * R) % (val_b ** 2)
+            data_file.write(x.to_bytes(length=limb_size*nlimb, byteorder="big"))
+        else:
+            data_file.write(val_a.to_bytes(length=limb_size*nlimb, byteorder="big"))
+
+        if oper == "mod" or oper == "mod-mont":
             assert val_b < mod_mod
             data_file.write(val_b.to_bytes(length=limb_size*mod_limb, byteorder="big"))
         else:
             assert val_b < mod
             data_file.write(val_b.to_bytes(length=limb_size*nlimb, byteorder="big"))
+
+        if oper == "mod-mont":
+            try:
+                Ni = pow(-val_b, -1, 2**(8*limb_size))
+            except ValueError:
+                print(val_b)
+                raise
+            data_file.write(Ni.to_bytes(length=limb_size, byteorder="big"))
+
         # write expected output to the file
         if oper == "add":
             data_file.write(((val_a + val_b) & (mod-1)).to_bytes(length=limb_size*nlimb, byteorder="big"))
         elif oper == "mul":
             data_file.write((val_a * val_b).to_bytes(length=limb_size*nlimb*2, byteorder="big"))
-        elif oper == "mod":
+        elif oper == "mod" or oper == "mod-mont":
             data_file.write((val_a % val_b).to_bytes(length=limb_size*mod_limb, byteorder="big"))
         else:
             assert oper == "sub"

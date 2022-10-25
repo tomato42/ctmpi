@@ -7,7 +7,7 @@
 #include <string.h>
 #include <fcntl.h>
 
-enum operation {Add, Sub, Mul, Mod, Rshift1, Cselect};
+enum operation {Add, Sub, Mul, Mod, Mod_Mont, Rshift1, Cselect};
 
 void help(char *name) {
     printf("Usage: %s -i file -o file -n num [-a|-s|-m|-o|-d -2 num]\n", name);
@@ -22,6 +22,7 @@ void help(char *name) {
     printf(" -s       perform subtraction test\n");
     printf(" -m       perform multiplication test\n");
     printf(" -d       perform modulo operation test\n");
+    printf(" -D       perform modulo montgomery operation test\n");
 }
 
 /* Get an architecture specific most precise clock source with the lowest
@@ -625,6 +626,142 @@ fail:
     return ret;
 }
 
+int time_mod_mont(size_t numb, size_t nummod, int in_file, int out_file) {
+    char *buf=NULL;
+    char prn_buf[1024];
+    limb_t *a=NULL, *b=NULL;
+    limb_t ni=0;
+    limb_t *rem=NULL, *exp_rem=NULL;
+    limb_t *tmp=NULL;
+    int ret = 0;
+    ssize_t r_ret;
+    size_t limb_count = numb / LIMB_BYTE_SIZE;
+    size_t mod_limb_count = nummod / LIMB_BYTE_SIZE;
+
+    uint64_t time_before = 0, time_after = 0;
+
+    r_ret = write(out_file, "mod_mont_times\n", 15);
+    if (r_ret != 15) {
+        fprintf(stderr, "Writing header to output file failed\n");
+        ret = 1;
+        goto fail;
+    }
+
+    buf = malloc(sizeof(char) * ((numb > nummod) ? numb : nummod));
+    if (buf == NULL) {
+        fprintf(stderr, "malloc fail (buf)\n");
+        ret = 1;
+        goto fail;
+    }
+    a = malloc(sizeof(limb_t) * limb_count);
+    if (a == NULL) {
+        fprintf(stderr, "malloc fail (a)\n");
+        ret = 1;
+        goto fail;
+    }
+    b = malloc(sizeof(limb_t) * mod_limb_count);
+    if (b == NULL) {
+        fprintf(stderr, "malloc fail (b)\n");
+        ret = 1;
+        goto fail;
+    }
+    rem = malloc(sizeof(limb_t) * mod_limb_count);
+    if (rem == NULL) {
+        fprintf(stderr, "malloc fail (rem)\n");
+        ret = 1;
+        goto fail;
+    }
+    exp_rem = malloc(sizeof(limb_t) * mod_limb_count);
+    if (exp_rem == NULL) {
+        fprintf(stderr, "malloc fail (exp_rem)\n");
+        ret = 1;
+        goto fail;
+    }
+    tmp = malloc(sizeof(limb_t) * mod_montgomery_limb_numb(mod_limb_count));
+    if (tmp == NULL) {
+        fprintf(stderr, "malloc fail (tmp)\n");
+        ret = 1;
+        goto fail;
+    }
+
+    while ((r_ret = read(in_file, buf, numb)) > 0) {
+        if (r_ret != numb) {
+            fprintf(stderr, "read less data than expected (truncated file?)\n");
+            ret = 1;
+            goto fail;
+        }
+        be_buf_to_limb_t(buf, a, limb_count);
+
+        r_ret = read(in_file, buf, nummod);
+        if (r_ret <= 0) {
+            fprintf(stderr, "can't read (b) value from input file (truncated "
+                    "file?)\n");
+            ret = 1;
+            goto fail;
+        }
+        be_buf_to_limb_t(buf, b, mod_limb_count);
+
+        r_ret = read(in_file, buf, sizeof(limb_t));
+        if (r_ret <= 0) {
+            fprintf(stderr, "can't read (ni) value from input file "
+                    "(truncated file?)\n");
+            ret = 1;
+            goto fail;
+        }
+        be_buf_to_limb_t(buf, &ni, 1);
+
+        r_ret = read(in_file, buf, nummod);
+        if (r_ret <= 0) {
+            fprintf(stderr, "can't read (exp_rem) value from input file "
+                    "(truncated file?)\n");
+            ret = 1;
+            goto fail;
+        }
+        be_buf_to_limb_t(buf, exp_rem, mod_limb_count);
+
+        time_before = get_time_before();
+
+        mod_montgomery(rem, a, limb_count, b, mod_limb_count, ni, tmp);
+
+        time_after = get_time_after();
+
+        if (memcmp(rem, exp_rem, nummod) != 0) {
+            fprintf(stderr, "mod() result incorrect\n");
+            ret = 1;
+            goto fail;
+        }
+
+        r_ret = snprintf(prn_buf, 1024, "%"PRId64"\n", time_after - time_before);
+        if (r_ret >= 1024) {
+            fprintf(stderr, "Unexpected snprintf output\n");
+            ret = 1;
+            goto fail;
+        }
+        r_ret = write(out_file, prn_buf, r_ret);
+        if (r_ret <= 0) {
+            fprintf(stderr, "Write error\n");
+            ret = 1;
+            goto fail;
+        }
+    }
+
+    if (r_ret < 0) {
+        fprintf(stderr, "Reading from input file failed\n");
+        ret = 1;
+        goto fail;
+    }
+
+fail:
+    free(buf);
+    free(a);
+    free(b);
+    free(rem);
+    free(exp_rem);
+    free(tmp);
+    return ret;
+
+}
+
 int main(int argc, char** argv) {
     int ret = 0;
     int opt;
@@ -635,7 +772,7 @@ int main(int argc, char** argv) {
     size_t nummod = 0;
     enum operation oper = Add;
 
-    while ((opt = getopt(argc, argv, "i:o:n:2:asmdh")) != -1) {
+    while ((opt = getopt(argc, argv, "i:o:n:2:asmdDh")) != -1) {
         switch(opt) {
             case 'i':
                 in_name = optarg;
@@ -661,6 +798,9 @@ int main(int argc, char** argv) {
             case 'd':
                 oper = Mod;
                 break;
+            case 'D':
+                oper = Mod_Mont;
+                break;
             case 'h':
                 help(argv[0]);
                 exit(0);
@@ -679,7 +819,7 @@ int main(int argc, char** argv) {
         help(argv[0]);
         exit(1);
     }
-    if (oper == Mod && nummod == 0) {
+    if ((oper == Mod || oper == Mod_Mont) && nummod == 0) {
         fprintf(stderr, "Specify the size of output for modulo operation\n");
         help(argv[0]);
         exit(1);
@@ -709,6 +849,9 @@ int main(int argc, char** argv) {
             break;
         case Mod:
             ret = time_mod(numb, nummod, in_file, out_file);
+            break;
+        case Mod_Mont:
+            ret = time_mod_mont(numb, nummod, in_file, out_file);
             break;
         default:
             fprintf(stderr, "Unknown operation: %d\n", oper);
