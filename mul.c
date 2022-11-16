@@ -74,6 +74,7 @@ typedef uint64_t limb_t;
 #define LIMB_BIT_SIZE 64
 #define LIMB_BYTE_SIZE 8
 
+#if 1
 void _mul_limb(limb_t *hi, limb_t *lo, limb_t a, limb_t b) {
     unsigned __int128 t;
     /* this is idiomatic code to tell compiler to use the native mul
@@ -82,6 +83,38 @@ void _mul_limb(limb_t *hi, limb_t *lo, limb_t a, limb_t b) {
     *hi = t >> LIMB_BIT_SIZE;
     *lo = t & -1UL;
 }
+#elif 0
+/* if we're on a 32 bit platform */
+void _mul_limb(limb_t *hi, limb_t *lo, limb_t a, limb_t b) {
+    uint64_t t;
+    /* this is idiomatic code to tell compiler to use the native mul
+     * those three lines will actually compile to single instruction */
+    t = (uint64_t)a * b;
+    *hi = t >> LIMB_BIT_SIZE;
+    *lo = t & -1UL;
+}
+#else
+/*
+ * if the compiler doesn't have either a 128bit data type nor a "return
+ * high 64 bits of multiplication"
+ */
+void _mul_limb(limb_t *hi, limb_t *lo, limb_t a, limb_t b) {
+    limb_t a_low = (limb_t)(uint32_t)a;
+    limb_t a_hi = a >> 32;
+    limb_t b_low = (limb_t)(uint32_t)b;
+    limb_t b_hi = b >> 32;
+
+    limb_t p0 = a_low * b_low;
+    limb_t p1 = a_low * b_hi;
+    limb_t p2 = a_hi * b_low;
+    limb_t p3 = a_hi * b_hi;
+
+    uint32_t cy = (uint32_t)(((p0 >> 32) + (uint32_t)p1 + (uint32_t)p2) >> 32);
+
+    *lo = p0 + (p1 << 32) + (p2 << 32);
+    *hi = p3 + (p1 >> 32) + (p2 >> 32) + cy;
+}
+#endif
 
 /* add two limbs with carry in, return carry out */
 limb_t _add_limb(limb_t *ret, limb_t a, limb_t b, limb_t carry) {
